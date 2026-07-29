@@ -59,6 +59,6 @@ If you found a bug, please use the [issue tracker][].
 [documentation]: https://github.io/lucas-diedrich/ms-scverse-bioconductor
 [changelog]: https://github.com/lucas-diedrich/ms-scverse-bioconductor/releases
 [api documentation]: https://ms-scverse-bioconductor.readthedocs.io/page/api.html
-[tutorials]: https://ms-scverse-bioconductor.readthedocs.io/page/api.html
+[tutorials]: https://ms-scverse-bioconductor.readthedocs.io/page/tutorials.html
 
 [venv]: https://docs.python.org/3/tutorial/venv.html
