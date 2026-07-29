@@ -25,13 +25,17 @@ classifiers = [
 dependencies = [
   "mudata",
   "mulink",
+  "networkx",
+  "pandas",
   # for debug logging (referenced from the issue template)
   "session-info2",
+  "typer",
 ]
 # https://docs.pypi.org/project_metadata/#project-urls
 urls.Documentation = "https://ms-scverse-bioconductor.readthedocs.io/"
 urls.Homepage = "https://github.com/lucas-diedrich/ms-scverse-bioconductor"
 urls.Source = "https://github.com/lucas-diedrich/ms-scverse-bioconductor"
+scripts.ms-scverse-bioconductor = "ms_scverse_bioconductor.cli:app"
 
 [dependency-groups]
 dev = [
