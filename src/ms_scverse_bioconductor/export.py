@@ -84,6 +84,9 @@ def export(
     sep: Annotated[
         str, typer.Option(help="Field separator of the written files. Determines the file extension.")
     ] = "\t",
+    save_mudata: Annotated[
+        bool, typer.Option("--save_mudata", "-save_mudata", help="Whether to save the MuData object as well")
+    ] = True,
 ) -> None:
     """Simulate a hierarchical mulink object and dump it to machine readable text files.
 
@@ -120,3 +123,8 @@ def export(
     path = output_dir / f"{name}.edgelist.{extension}"
     _feature_edgelist(mdata, varp_key=varp_key).to_csv(path, sep=sep, index=False)
     typer.echo(f"Wrote {path}")
+
+    if save_mudata:
+        path = output_dir / f"{name}.h5mu"
+        mdata.write_h5mu(path)
+        typer.echo(f"Wrote {path}")
