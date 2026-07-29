@@ -8,41 +8,39 @@
 
 Joint MS-proteomics analysis of Python and R packages
 
-## Getting started
+> [!NOTE]
+> Work in progress
 
-Please refer to the [documentation][],
-in particular, the [API documentation][].
 
-## Installation
+This repository documents approaches on how to integrate R and Python analyses
 
-You need to have Python 3.12 or newer installed on your system.
-If you don't have Python installed, we recommend installing [uv][].
+## For users
+This GitHub repository contains tutorials on how to perform cross-ecosystem MS-proteomics data analyses in Python and R, specifically with alphapepttools/mulink (in Python) and scp/QFeatures (in R). Please refer to the [documentation][], in particular, the [tutorials][].
 
-We recommend managing dependencies in project-specific virtual environments to avoid dependency conflicts.
-This is most convenient using package managers such as [uv][].
-Choose from the options below to install ms-scverse-bioconductor:
+## For developers
 
-<!--
-1. Add the latest release of `ms-scverse-bioconductor` from [PyPI][] to your `uv` project:
+### Installation
 
-   ```bash
-   uv add ms-scverse-bioconductor
-   ```
+We provide some utility functions to generate test data for developers. You can install this repository as a regular python package with command line utilities.
 
-1. Install the latest release into a [standard virtual environment][venv]:
+```
+conda create -n msproteomics python=3.13 -y
+pip install git+https://github.com/lucas-diedrich/ms-scverse-bioconductor.git
+```
 
-   ```bash
-   (after activating your venv)
-   pip install ms-scverse-bioconductor
-   ```
+### Usage
+Use the command line utilities to generate test data etc.
 
--->
+```bash
+ms-scverse-bioconductor --help
+```
 
-1. Install the latest development version:
+### Docker
+If you do not want to install a python environment, you can also use the docker image that mirrors the CLI interface:
 
-   ```bash
-   pip install git+https://github.com/lucas-diedrich/ms-scverse-bioconductor.git  # (or `uv add`)
-   ```
+```bash
+docker run --rm -it ldiedrich/ms-scverse-bioconductor --help
+```
 
 ## Release notes
 
@@ -53,16 +51,14 @@ See the [changelog][].
 For questions and help requests, you can reach out in the [scverse discourse][].
 If you found a bug, please use the [issue tracker][].
 
-## Citation
-
-> t.b.a
 
 [uv]: https://github.com/astral-sh/uv
 [scverse discourse]: https://discourse.scverse.org/
 [issue tracker]: https://github.com/lucas-diedrich/ms-scverse-bioconductor/issues
 [tests]: https://github.com/lucas-diedrich/ms-scverse-bioconductor/actions/workflows/test.yaml
-[documentation]: https://ms-scverse-bioconductor.readthedocs.io
-[changelog]: https://ms-scverse-bioconductor.readthedocs.io/page/changelog.html
+[documentation]: https://github.io/lucas-diedrich/ms-scverse-bioconductor
+[changelog]: https://github.com/lucas-diedrich/ms-scverse-bioconductor/releases
 [api documentation]: https://ms-scverse-bioconductor.readthedocs.io/page/api.html
-[pypi]: https://pypi.org/project/ms-scverse-bioconductor
+[tutorials]: https://ms-scverse-bioconductor.readthedocs.io/page/api.html
+
 [venv]: https://docs.python.org/3/tutorial/venv.html
