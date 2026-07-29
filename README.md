@@ -4,7 +4,7 @@
 [![Documentation][badge-docs]][documentation]
 
 [badge-tests]: https://img.shields.io/github/actions/workflow/status/lucas-diedrich/ms-scverse-bioconductor/test.yaml?branch=main
-[badge-docs]: https://app.readthedocs.org/projects/ms-scverse-bioconductor/badge/
+[badge-docs]: https://github.com/lucas-diedrich/ms-scverse-bioconductor/actions/workflows/docs.yaml/badge.svg
 
 Joint MS-proteomics analysis of Python and R packages
 
