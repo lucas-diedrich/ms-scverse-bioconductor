@@ -1,0 +1,113 @@
+name: Build and publish Docker Image
+
+# Triggers on workflow_dispatch or when a semver tag is pushed.
+on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: 'Branch, tag, or commit to install the package from (default: main)'
+        required: false
+        default: 'main'
+      custom_labels:
+        description: 'Custom labels (comma-separated key=value pairs, e.g., "version=1.0.0,env=prod")'
+        required: false
+        default: ''
+      docker_tag_suffix:
+        description: 'Additional tag suffix (will be appended to auto-generated tags)'
+        required: false
+        default: ''
+  push:
+    tags:
+      - 'v*.*.*'
+
+# IMAGE_NAME is `<dockerhub-namespace>/<repo>`; the namespace comes from the
+# `DOCKERHUB_USERNAME` repository secret so it can differ from the GitHub org.
+# Note that this masks the namespace in the workflow logs, where all tags then read `***/…`.
+env:
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/ms-scverse-bioconductor
+
+# There is a single job in this workflow. It's configured to run on the latest available version of Ubuntu.
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    # Pushing to Docker Hub uses a PAT, so the only GITHUB_TOKEN permission
+    # we need is `contents: read` to check out the repository.
+    permissions:
+      contents: read
+    env:
+      # The Dockerfile installs the package from a GitHub source tarball rather than from the build
+      # context, so the ref to build has to be passed in explicitly. Without this the image would
+      # always contain `main`, even when it is tagged as a release.
+      GIT_REF: ${{ inputs.git_ref || github.ref_name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          filter: blob:none
+          persist-credentials: false
+      - name: Log in to Docker Hub
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          # Omitting `registry:` defaults to docker.io / Docker Hub.
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # `workflow_dispatch` inputs are single-line, while the `labels` input of metadata-action is a
+      # newline separated list that keeps commas as part of the value.
+      - name: Split the comma separated custom labels
+        id: custom-labels
+        env:
+          CUSTOM_LABELS: ${{ inputs.custom_labels }}
+        run: |
+          {
+            echo 'labels<<CUSTOM_LABELS_EOF'
+            printf '%s\n' "$CUSTOM_LABELS" | tr ',' '\n'
+            echo 'CUSTOM_LABELS_EOF'
+          } >> "$GITHUB_OUTPUT"
+      # This step uses [docker/metadata-action](https://github.com/docker/metadata-action#about) to extract tags and labels that will be applied to the specified image. The `id` "meta" allows the output of this step to be referenced in a subsequent step. The `images` value provides the base name for the tags and labels.
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          # Docker Hub image references don't include the `docker.io/` prefix.
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            # Move 'latest' for released versions and for builds of the default branch
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' || env.GIT_REF == github.event.repository.default_branch }}
+            # Generate tag from git tag (semver)
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            # Generate tag from commit SHA (for any trigger)
+            type=sha,prefix={{date 'YYYYMMDD'}}-
+            # Add custom suffix if provided
+            type=raw,value={{sha}}-${{ inputs.docker_tag_suffix }},enable=${{ inputs.docker_tag_suffix != '' }}
+          labels: |
+            org.opencontainers.image.title=ms-scverse-bioconductor
+            org.opencontainers.image.description=Joint MS-proteomics analysis of Python and R packages
+            git_ref=${{ env.GIT_REF }}
+            ${{ steps.custom-labels.outputs.labels }}
+      # This step uses the `docker/build-push-action` action to build the image, based on your repository's `Dockerfile`. If the build succeeds, it pushes the image to Docker Hub.
+      # It uses the `context` parameter to define the build's context as the set of files located in the specified path. For more information, see [Usage](https://github.com/docker/build-push-action#usage) in the README of the `docker/build-push-action` repository.
+      # It uses the `tags` and `labels` parameters to tag and label the image with the output from the "meta" step.
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_REPOSITORY=${{ github.repository }}
+            GIT_REF=${{ env.GIT_REF }}
+
+      # This step generates an artifact attestation for the image, which is an unforgeable statement about where and how it was built. It increases supply chain security for people who consume the image. For more information, see [Using artifact attestations to establish provenance for builds](/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds).
+      # TODO: Uncomment when repository becomes public. Also add `id-token: write` and
+      # `attestations: write` to the job permissions above, which this step requires.
+      # - name: Generate artifact attestation
+      #   uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+      #   with:
+      #     subject-name: docker.io/${{ env.IMAGE_NAME }}
+      #     subject-digest: ${{ steps.push.outputs.digest }}
+      #     push-to-registry: true
