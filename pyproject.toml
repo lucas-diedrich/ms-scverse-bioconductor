@@ -23,7 +23,8 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "anndata>=0.13",
+  "mudata",
+  "mulink",
   # for debug logging (referenced from the issue template)
   "session-info2",
 ]
