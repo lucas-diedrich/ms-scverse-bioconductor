@@ -1,3 +1,5 @@
-from . import pl, pp, tl
+from importlib.metadata import version
 
-__all__ = ["pl", "pp", "tl"]
+__all__ = ["__version__"]
+
+__version__ = version("ms-scverse-bioconductor")
