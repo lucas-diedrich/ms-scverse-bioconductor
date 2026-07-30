@@ -42,6 +42,12 @@ If you do not want to install a python environment, you can also use the docker 
 docker run --rm -it ldiedrich/ms-scverse-bioconductor --help
 ```
 
+Export example data:
+```bash
+# Mount the current directory onto /data in the docker container and export the data to the local directory
+docker run --rm -it -v $(pwd):/data ldiedrich/ms-scverse-bioconductor export --n-mod 3 --output-dir /data --name mudata
+```
+
 ## Release notes
 
 See the [changelog][].
