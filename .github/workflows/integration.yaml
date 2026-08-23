@@ -32,7 +32,7 @@ permissions:
 
 jobs:
   roundtrip:
-    name: mulink <-> QFeatures round trips
+    name: Integration test
     runs-on: ubuntu-latest
     # A cold build installs R and Bioconductor packages before any test runs.
     timeout-minutes: 60
