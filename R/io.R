@@ -312,6 +312,34 @@ feature_mapping_from_assay_links <- function(object,
 }
 
 
+#' Cast NA-bearing integer and logical columns to double.
+#'
+#' `MuData:::write_matrix()` routes an integer or logical column that contains NA
+#' through the `nullable-integer`/`nullable-boolean` encoding, whose mask rhdf5
+#' writes as `int8`. anndata requires a genuine boolean mask and rejects the file
+#' with "mask should be boolean numpy array", so a single NA in such a column
+#' makes the whole .h5mu unreadable from Python.
+#'
+#' Doubles avoid that encoding entirely -- `write_matrix()` turns their NAs into
+#' NaN, which both ecosystems read as missing -- so the affected columns are cast
+#' to double. Values and missingness survive; the integer/logical type does not.
+#'
+#' @param df A `DataFrame`.
+#' @param context Label used to name the cast columns in the warning.
+#'
+#' @return A list of the possibly modified `df` and the names of the `cast`
+#'     columns.
+cast_nullable_columns <- function(df, context) {
+    affected <- vapply(df, function(x) (is.integer(x) || is.logical(x)) && anyNA(x),
+                       logical(1))
+    if (!any(affected))
+        return(list(df = df, cast = character(0)))
+
+    df[affected] <- lapply(df[affected], as.double)
+    list(df = df, cast = paste0(context, "$", colnames(df)[affected]))
+}
+
+
 #' Rewrite the global `.var` index of an .h5mu file.
 #'
 #' `MuData::writeH5MU()` builds the global index as
@@ -387,7 +415,6 @@ write_varp <- function(file, key, mat) {
 #'     an inter-modality edge starts from. `fcol` therefore does not survive this
 #'     write, and `qfeatures_read_h5mu()` substitutes the `.varp` key for it.
 #'
-#' Matrix-valued `rowData` columns are dropped with a warning; see below.
 #'
 #' @param object A `QFeatures` object.
 #' @param path Path of the .h5mu file to create.
@@ -404,7 +431,10 @@ writeQFeaturesH5MU <- function(object, path,
     if (!is(object, "QFeatures"))
         stop("'object' must be a QFeatures object.")
     if (file.exists(path)) {
-        ## MuData::writeH5MU() goes through H5Fcreate() and cannot truncate.
+        ## MuData::writeH5MU() takes an `overwrite` argument but never reads it,
+        ## and its H5Fcreate() call defaults to H5F_ACC_TRUNC, so it destroys an
+        ## existing file whatever is passed. Guard explicitly. Verified against
+        ## MuData 1.14.0.
         if (!overwrite)
             stop("'", path, "' already exists; pass overwrite = TRUE to replace it.")
         unlink(path)
@@ -417,6 +447,7 @@ writeQFeaturesH5MU <- function(object, path,
 
     keys <- split(index$key, factor(index$assay, levels = names(object)))
     dropped <- character(0)
+    cast <- character(0)
 
     prepared <- mapply(function(se, name, key) {
         ## MuData cannot encode a matrix-valued rowData column: writeH5AD()
@@ -436,8 +467,28 @@ writeQFeaturesH5MU <- function(object, path,
             rowData(se)$mulink_feature_id <- rownames(se)
             rownames(se) <- key
         }
+
+        fixed <- cast_nullable_columns(rowData(se), paste0(name, "/rowData"))
+        rowData(se) <- fixed$df
+        cast <<- c(cast, fixed$cast)
+
+        fixed <- cast_nullable_columns(colData(se), paste0(name, "/colData"))
+        colData(se) <- fixed$df
+        cast <<- c(cast, fixed$cast)
+
         se
     }, experiments(object), names(object), keys, SIMPLIFY = FALSE)
+
+    ## The global colData is written by writeH5MU() as /obs and is just as
+    ## exposed to the nullable encoding as the per-assay annotations.
+    fixed <- cast_nullable_columns(colData(object), "colData")
+    object@colData <- fixed$df
+    cast <- c(cast, fixed$cast)
+
+    if (length(cast))
+        warning("Cast NA-bearing integer/logical column(s) '",
+                paste(cast, collapse = "', '"), "' to double, which MuData ",
+                "encodes in a form Python can read. See cast_nullable_columns().")
 
     if (length(dropped))
         warning("Dropped matrix-valued rowData column(s) '",
