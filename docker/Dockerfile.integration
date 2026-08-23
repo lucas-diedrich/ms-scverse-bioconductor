@@ -1,0 +1,72 @@
+# Image holding both stacks, for the mulink <-> QFeatures round-trip tests.
+#
+# The runtime image at the repository root is Python only; this one adds
+# R/Bioconductor so that a single container can run both legs of a round trip.
+#
+# Build (from the repository root, since the build context is the repository):
+#   docker build -f docker/Dockerfile.integration -t ms-scverse-bioconductor:integration .
+#
+# Run the suite:
+#   docker run --rm ms-scverse-bioconductor:integration
+#
+# Run one leg by hand, against files in the working directory:
+#   docker run --rm -v "$PWD:/data" -w /data --entrypoint Rscript \
+#     ms-scverse-bioconductor:integration /app/R/roundtrip-cli.R read-write --in a.h5mu --out b.h5mu
+#
+# The base is a Bioconductor image rather than a Python one, and Python is added
+# on top. Bioconductor images carry the system HDF5 and XML libraries the
+# Bioconductor packages link against, and they are wired to the Posit Package
+# Manager binary repositories, so BiocManager::install() downloads prebuilt
+# binaries instead of compiling. Going the other way round -- adding R and
+# Bioconductor to a python:slim image -- means compiling both from source.
+#
+# The release tag pins R and every Bioconductor package to one Bioconductor
+# release. It is kept at 3_22 to match the Bioconductor release this converter
+# was developed against; RELEASE_3_23 exists and moving to it changes R and
+# every Bioconductor version at once, so do it deliberately.
+#
+# The Python side is resolved at build time, since the repository commits no
+# uv.lock. Committing one would make the Python half of the image reproducible
+# too, and is worth doing before this image is published.
+FROM bioconductor/bioconductor_docker:RELEASE_3_23
+
+# `--no-install-recommends` keeps the R image from pulling a second Python.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# The R packages the round-trip CLI needs. jsonlite is how the R comparator
+# reports back to pytest; the rest are what R/io.R loads.
+RUN Rscript -e "BiocManager::install(c('QFeatures', 'MuData', 'MultiAssayExperiment', 'rhdf5'), ask = FALSE, update = FALSE)" \
+    && Rscript -e "install.packages(c('jsonlite', 'Matrix'))" \
+    && Rscript -e "stopifnot(all(c('QFeatures','MuData','rhdf5','jsonlite') %in% rownames(installed.packages())))"
+
+COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /usr/local/bin/uv
+
+# UV_PYTHON pins the interpreter rather than inheriting whichever python3 the
+# base image happens to ship, so a base image bump cannot silently change it.
+ENV UV_PYTHON=3.13 \
+    UV_PYTHON_INSTALL_DIR=/opt/python \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH=/opt/venv/bin:$PATH
+
+WORKDIR /app
+
+# Dependency metadata first, so that editing source does not invalidate the
+# resolved Python environment layer.
+COPY pyproject.toml README.md LICENSE ./
+COPY src/ms_scverse_bioconductor/__init__.py src/ms_scverse_bioconductor/__init__.py
+RUN uv sync --group test --no-install-project
+
+COPY src src
+COPY R R
+COPY tests tests
+RUN uv sync --group test
+
+# `Rscript` on PATH is what conftest.py discovers when MSSB_RSCRIPT is unset.
+RUN Rscript /app/R/roundtrip-cli.R check
+
+ENTRYPOINT [ "uv", "run", "--no-sync", "pytest" ]
+CMD [ "tests", "-v" ]
