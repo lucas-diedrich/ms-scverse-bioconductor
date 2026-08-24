@@ -19,3 +19,7 @@ __pycache__/
 # docs
 /docs/generated/
 /docs/_build/
+
+# Paper
+Ai2025.md
+Ai2025/**
