@@ -21,5 +21,20 @@ __pycache__/
 /docs/_build/
 
 # Paper
-Ai2025.md
-Ai2025/**
+*.md
+*.png
+
+# Plots
+*.svg
+
+# Data
+*.h5mu
+*.h5ad
+*.tsv
+
+
+# Tests
+docs/tutorials/wu2026/**
+docs/tutorials/ai2025-1/**
+docs/tutorials/ai2025-2/**
+docs/tutorials/wishdia2023/**
