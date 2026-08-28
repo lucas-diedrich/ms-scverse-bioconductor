@@ -4,7 +4,7 @@ The [Bioconductor](https://www.bioconductor.org) and [scverse](https://scverse.o
 
 Lead developers of MS proteomics-specific data structures and tools in the two projects convened at a [scverse proteomics hackathon](https://github.com/scverse/2026_03_hackathon_proteomics.git) in March 2026 and have since worked together to harmonize their respective data structures, QFeatures and mudata/mulink, for storing and manipulating quantitative proteomics data across this feature hierarchy while preserving data provenance along the full analysis pipeline. This work enables full round trips between languages also connects the higher-level analysis tools built on each structure (scp, [alphapepttools](https://github.com/MannLabs/alphapepttools)).
 
-![](_static/images/yin-yang.png)
+![](./_static/images/yin-yang.png)
 
 Here we present this collaborative work and show how it facilitates single-cell proteomics analysis across ecosystems, spanning key steps such as missing-value imputation, differential expression analysis, and advanced single-cell analyses like trajectory inference. By enabling principled, language-agnostic processing of SCP data, this effort aims to lay a foundation for field-wide best practices and standards for single-cell proteomics analysis.
 
