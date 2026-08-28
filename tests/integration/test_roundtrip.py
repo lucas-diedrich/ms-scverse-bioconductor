@@ -85,19 +85,40 @@ PYTHON_ORIGIN_XFAIL: dict[str, str] = {}
 # `uns['mulink']['assays']` yet, so `AssayLink@fcol` has nowhere to go and the
 # reader substitutes the .varp key. Documented in `io.R` and ROADMAP.md.
 #
-# `set_order` (feat3): the modality-order gap described above, seen from the R
-# side. Only feat3 has more than one assay *and* a non-alphabetical order.
+# `set_order`: the modality-order gap described above, seen from the R side.
+# feat3 was the only fixture with more than one assay *and* a non-alphabetical
+# order, and it no longer reports the kind: the sample-block collapse below makes
+# the assay *sets* differ, and `compare_qfeatures()` only compares order once the
+# sets match. The gap is unchanged, it is simply masked here.
+#
+# `sets` + `link_parents` + `sample_map` (feat3): `writeLinkH5MU()` collapses
+# sample blocks -- assays that are name-preserving parents of a child holding
+# strictly more samples, i.e. scp's one-assay-per-MS-run layout as merged by
+# `joinAssays()` -- into the assay they join into, instead of writing each as its
+# own modality (see `sample_blocks()` in `R/io.R`). feat3's `psms1`/`psms2` are
+# such blocks, so they do not survive as assays (`sets`), `psmsall` comes back
+# without parents (`link_parents`), and the `sampleMap` rows that referenced them
+# are gone (`sample_map`, 24 vs 20 rows).
+#
+# This is the deliberate trade for a usable feature axis: without it the
+# `ai2025a` tutorial wrote 303 modalities and a global axis of 1,070,110 entries
+# for 26,325 distinct features, 96.6% of the `.varp` edges being identity edges.
+# Splitting the blocks back out on read needs `uns['mulink']['assays']`, which is
+# the same unwritten record that `link_fcol` waits on (ROADMAP.md section 1);
+# these three kinds become intolerable once it exists.
 R_ORIGIN_PROFILE: dict[str, set[str]] = {
     "feat1": {"layer_names", "feature_annotation_types"},
     "feat2": {"layer_names", "feature_names", "feature_annotation_columns"},
     "feat3": {
-        "set_order",
         "layer_names",
         "feature_names",
         "feature_annotation_columns",
         "feature_annotation_types",
         "link_topology",
         "link_fcol",
+        "sets",
+        "link_parents",
+        "sample_map",
     },
     "ft_na": set(),
     "nullable_rowdata": {"layer_names", "feature_annotation_types"},
