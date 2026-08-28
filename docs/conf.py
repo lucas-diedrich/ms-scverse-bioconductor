@@ -63,6 +63,7 @@ extensions = [
     "IPython.sphinxext.ipython_console_highlighting",
     "sphinxext.opengraph",
     "scverse_misc.sphinx_ext",
+    "sphinxcontrib.mermaid",
     *[p.stem for p in (HERE / "extensions").glob("*.py")],
 ]
 
