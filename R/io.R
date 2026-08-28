@@ -7,8 +7,8 @@
 ## That group is where mulink keeps the feature graph, so it is read and written
 ## separately, against a QFeatures object, whose AssayLinks can represent it.
 ##
-##   qfeatures_read_h5mu()   .h5mu -> QFeatures
-##   writeQFeaturesH5MU()    QFeatures -> .h5mu
+##   readLinkH5MU()   .h5mu -> QFeatures
+##   writeLinkH5MU()    QFeatures -> .h5mu
 
 library(QFeatures)
 library(MuData)
@@ -165,6 +165,96 @@ assay_links_from_feature_mapping <- function(experiments,
 }
 
 
+#' Assays that are sample blocks of another assay, not feature levels of their own.
+#'
+#' scp's native layout is one assay per MS run — `readSCPfromDIANN()` splits the
+#' report by `runCol` — so a dataset arrives as N assays that are all at the
+#' *same* feature level and hold *disjoint* samples. `joinAssays()` later merges
+#' them into one assay whose `AssayLink` names every run as a parent.
+#'
+#' @param object A `QFeatures` object.
+#'
+#' @return A named character vector: names are the block assays, values the
+#'     assay each collapses into.
+sample_blocks <- function(object) {
+    nms <- names(object)
+
+    parents <- lapply(setNames(nm = nms), function(to) {
+        from <- assayLink(object, to)@from
+        from[!is.na(from)]
+    })
+
+    children <- setNames(vector("list", length(nms)), nms)
+    for (to in nms)
+        for (from in parents[[to]])
+            children[[from]] <- unique(c(children[[from]], to))
+
+    ## @hits is either a single Hits or a List parallel to @from; both shapes
+    ## occur even with a single parent (see feature_mapping_from_assay_links()).
+    link_hits <- function(to, from) {
+        al <- assayLink(object, to)
+        h <- if (is(al@hits, "List")) as.list(al@hits) else list(al@hits)
+        k <- match(from, al@from)
+        if (is.na(k) || k > length(h)) NULL else h[[k]]
+    }
+
+    is_block <- function(from) {
+        if (length(parents[[from]]) || length(children[[from]]) != 1L)
+            return(FALSE)
+
+        to <- children[[from]]
+        a <- object[[from]]
+        b <- object[[to]]
+
+        if (ncol(a) >= ncol(b) || !all(colnames(a) %in% colnames(b)))
+            return(FALSE)
+        if (!all(rownames(a) %in% rownames(b)))
+            return(FALSE)
+
+        h <- link_hits(to, from)
+        if (is.null(h) || length(h) == 0L)
+            return(FALSE)
+
+        md <- mcols(h)
+        identical(as.character(md$names_from), as.character(md$names_to)) &&
+            all(rownames(a) %in% md$names_from)
+    }
+
+    blocks <- Filter(Negate(is.null), lapply(setNames(nm = nms), function(nm) {
+        if (is_block(nm)) children[[nm]] else NULL
+    }))
+
+    if (!length(blocks))
+        return(setNames(character(0), character(0)))
+    unlist(blocks)
+}
+
+
+#' Blocks whose values the assay they collapse into does not reproduce.
+#'
+#' Collapsing a block discards its matrix, on the grounds that a name-preserving
+#' link means the child's corresponding slice holds the same numbers.
+#' `joinAssays()` guarantees that — it merges without transforming — but a
+#' hand-built `AssayLink` does not, so the assumption is checked instead of
+#' assumed. Only the block's own rows and columns are compared, and NA is
+#' compared as a pattern, as everywhere else here.
+#'
+#' @param object A `QFeatures` object.
+#' @param blocks The output of `sample_blocks()`.
+#'
+#' @return The names of the blocks that do not match.
+block_value_mismatch <- function(object, blocks) {
+    mismatched <- vapply(names(blocks), function(from) {
+        a <- as.matrix(assay(object[[from]]))
+        b <- as.matrix(assay(object[[blocks[[from]]]]))[rownames(a), colnames(a),
+                                                        drop = FALSE]
+        !isTRUE(all.equal(a, b, check.attributes = FALSE))
+    }, logical(1))
+
+    names(blocks)[mismatched]
+}
+
+
 #' Read an .h5mu file and create a `QFeatures` object.
 #'
 #' @param path Path to the .h5mu file.
@@ -173,7 +263,7 @@ assay_links_from_feature_mapping <- function(experiments,
 #'
 #' @return A `QFeatures` object. Assays and their links come from the file; if
 #'     the `.varp` key is absent the assays are returned unlinked.
-qfeatures_read_h5mu <- function(path,
+readLinkH5MU <- function(path,
                                 feature_mapping_key = "feature_mapping",
                                 backed = FALSE) {
     mae <- MuData::readH5MU(path, backed = backed)
@@ -222,16 +312,20 @@ qfeatures_read_h5mu <- function(path,
 #' @param prefix When to prefix feature names with the assay name: `"collision"`
 #'     only if the plain names are not globally unique, `"always"`, or `"never"`.
 #' @param sep Separator between the assay name and the feature name.
+#' @param assays The assays that become modalities, in file order. Sample blocks
+#'     are excluded, since their features reach the axis through the assay they
+#'     collapse into (see `sample_blocks()`).
 #'
 #' @return A list of the global feature `key`s and, parallel to them, the `assay`
 #'     and original `id` each came from.
 feature_index <- function(object,
                           prefix = c("collision", "always", "never"),
-                          sep = ":") {
+                          sep = ":",
+                          assays = names(object)) {
     prefix <- match.arg(prefix)
 
-    ids <- lapply(names(object), function(nm) rownames(object[[nm]]))
-    names(ids) <- names(object)
+    ids <- lapply(assays, function(nm) rownames(object[[nm]]))
+    names(ids) <- assays
     assay <- rep(names(ids), lengths(ids))
     ids <- unlist(ids, use.names = FALSE)
 
@@ -263,19 +357,24 @@ feature_index <- function(object,
 #'
 #' @param object A `QFeatures` object.
 #' @param index The global feature axis, from `feature_index()`.
+#' @param assays The assays that become modalities, in file order. An edge is
+#'     kept only if both of its endpoints are among them: the identity edges a
+#'     sample block contributes are redundant with the block's membership in the
+#'     assay it collapses into, so they are dropped with it.
 #'
 #' @return A `p x p` sparse matrix over the global feature axis.
 feature_mapping_from_assay_links <- function(object,
-                                             index = feature_index(object)) {
+                                             index = feature_index(object),
+                                             assays = names(object)) {
     p <- length(index$key)
 
     ## Assay name -> global positions, named by that assay's row names, so that a
     ## feature name resolves to a row/column of the matrix by lookup.
-    positions <- split(seq_len(p), factor(index$assay, levels = names(object)))
+    positions <- split(seq_len(p), factor(index$assay, levels = assays))
     positions <- mapply(function(pos, nm) setNames(pos, rownames(object[[nm]])),
                         positions, names(positions), SIMPLIFY = FALSE)
 
-    edges <- lapply(names(object), function(to) {
+    edges <- lapply(assays, function(to) {
         al <- assayLink(object, to)
 
         ## @hits is either a single Hits or a List of Hits parallel to @from.
@@ -288,7 +387,9 @@ feature_mapping_from_assay_links <- function(object,
         do.call(rbind, lapply(seq_along(hits), function(k) {
             from <- al@from[k]
             h <- hits[[k]]
-            if (is.na(from) || length(h) == 0L) return(NULL)  # root assay
+            ## A `from` outside `assays` is a collapsed sample block.
+            if (is.na(from) || !(from %in% assays) || length(h) == 0L)
+                return(NULL)  # root assay, or a collapsed block
             md <- mcols(h)
 
             ## names_from/names_to are the authoritative endpoints.
@@ -400,20 +501,28 @@ write_varp <- function(file, key, mat) {
 
 #' Write a `QFeatures` object to an .h5mu file.
 #'
-#' Inverse of `qfeatures_read_h5mu()`. `MuData::writeH5MU()` covers the
+#' Inverse of `readLinkH5MU()`. `MuData::writeH5MU()` covers the
 #' MultiAssayExperiment skeleton; the feature graph held in `AssayLinks` has no
 #' place there, so it is written separately to the global `.varp` as a `p x p`
 #' sparse adjacency matrix over the global `.var` index.
 #'
+#' Assays that are *sample blocks* of another assay — scp's one-assay-per-MS-run
+#' layout, later merged by `joinAssays()` — are collapsed into the assay they
+#' join into rather than written as modalities of their own; see
+#' `sample_blocks()` for the rule and what went wrong without it.
+#'
 #' Two parts of the specification are deliberately not implemented here and are
 #' tracked separately in ROADMAP.md:
 #'
-#'   * The modality/layer split. Every assay is written as its own modality, so a
-#'     one-to-one transformation such as `logTransform()` becomes a second
-#'     modality plus an edge, rather than a layer of its parent.
+#'   * The layer half of the modality/layer split. A one-to-one transformation on
+#'     *identical* rows and columns, such as `logTransform()`, still becomes a
+#'     second modality plus an edge rather than a layer of its parent. Only the
+#'     sample-block half of the rule is implemented.
 #'   * `uns["mulink"]["assays"]`, which records `AssayLink@fcol` and which layer
 #'     an inter-modality edge starts from. `fcol` therefore does not survive this
-#'     write, and `qfeatures_read_h5mu()` substitutes the `.varp` key for it.
+#'     write, and `readLinkH5MU()` substitutes the `.varp` key for it. It is also
+#'     what a reader would need to split the collapsed blocks back out, so this
+#'     write is lossy for them: `readLinkH5MU()` returns the joined assays only.
 #'
 #'
 #' @param object A `QFeatures` object.
@@ -423,7 +532,7 @@ write_varp <- function(file, key, mat) {
 #' @param overwrite Whether to replace `path` if it already exists.
 #'
 #' @return `path`, invisibly.
-writeQFeaturesH5MU <- function(object, path,
+writeLinkH5MU <- function(object, path,
                                feature_mapping_key = "feature_mapping",
                                prefix = c("collision", "always", "never"),
                                sep = ":",
@@ -440,12 +549,31 @@ writeQFeaturesH5MU <- function(object, path,
         unlink(path)
     }
 
-    index <- feature_index(object, prefix = prefix, sep = sep)
+    blocks <- sample_blocks(object)
+    retained <- setdiff(names(object), names(blocks))
+
+    if (length(blocks)) {
+        mismatched <- block_value_mismatch(object, blocks)
+        if (length(mismatched))
+            warning("Sample block(s) '", paste(mismatched, collapse = "', '"),
+                    "' hold values the assay they collapse into does not ",
+                    "reproduce. Those values are not written. See ",
+                    "sample_blocks().")
+
+        message("Collapsing ", length(blocks), " sample block(s) into '",
+                paste(unique(unname(blocks)), collapse = "', '"),
+                "'; writing ", length(retained), " of ", length(object),
+                " assays as modalities.")
+    }
+
+    index <- feature_index(object, prefix = prefix, sep = sep,
+                           assays = retained)
     ## Built before any renaming, since the AssayLinks are keyed on the row names
     ## the object currently carries.
-    feature_mapping <- feature_mapping_from_assay_links(object, index)
+    feature_mapping <- feature_mapping_from_assay_links(object, index,
+                                                        assays = retained)
 
-    keys <- split(index$key, factor(index$assay, levels = names(object)))
+    keys <- split(index$key, factor(index$assay, levels = retained))
     dropped <- character(0)
     cast <- character(0)
 
@@ -477,7 +605,7 @@ writeQFeaturesH5MU <- function(object, path,
         cast <<- c(cast, fixed$cast)
 
         se
-    }, experiments(object), names(object), keys, SIMPLIFY = FALSE)
+    }, experiments(object)[retained], retained, keys, SIMPLIFY = FALSE)
 
     ## The global colData is written by writeH5MU() as /obs and is just as
     ## exposed to the nullable encoding as the per-assay annotations.
@@ -500,6 +628,12 @@ writeQFeaturesH5MU <- function(object, path,
     ## has already been extracted, so the slot is assigned directly to skip the
     ## validity check that would reject this write-only object.
     object@ExperimentList <- ExperimentList(prepared)
+
+    ## writeH5MU() reads sampleMap per modality, so rows for a collapsed block
+    ## would simply never be looked at; they are pruned anyway to keep the
+    ## write-only object internally consistent.
+    sm <- object@sampleMap
+    object@sampleMap <- sm[as.character(sm$assay) %in% retained, , drop = FALSE]
 
     MuData::writeH5MU(object, path)
     write_var_index(path, index$key)
