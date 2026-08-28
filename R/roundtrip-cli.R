@@ -107,7 +107,7 @@
     out <- .require_option(args, "out")
 
     object <- fixture(name)
-    writeQFeaturesH5MU(object, out, overwrite = TRUE)
+    writeLinkH5MU(object, out, overwrite = TRUE)
     message("Wrote ", out, " from fixture '", name, "'.")
 }
 
@@ -117,8 +117,8 @@
     input <- .require_option(args, "in")
     out <- .require_option(args, "out")
 
-    object <- qfeatures_read_h5mu(input)
-    writeQFeaturesH5MU(object, out, overwrite = TRUE)
+    object <- readLinkH5MU(input)
+    writeLinkH5MU(object, out, overwrite = TRUE)
     message("Read ", input, " into a QFeatures object with ",
             length(object), " assays and wrote ", out, ".")
 }
@@ -135,7 +135,7 @@
     name <- .require_option(args, "fixture")
     input <- .require_option(args, "in")
 
-    report <- compare_qfeatures(fixture(name), qfeatures_read_h5mu(input))
+    report <- compare_qfeatures(fixture(name), readLinkH5MU(input))
     .emit(report, if (is.character(args$report)) args$report else NULL)
 }
 

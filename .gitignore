@@ -19,3 +19,22 @@ __pycache__/
 # docs
 /docs/generated/
 /docs/_build/
+
+# Paper
+*.md
+*.png
+
+# Plots
+*.svg
+
+# Data
+*.h5mu
+*.h5ad
+*.tsv
+
+
+# Tests
+docs/tutorials/wu2026/**
+docs/tutorials/ai2025-1/**
+docs/tutorials/ai2025-2/**
+docs/tutorials/wishdia2023/**
